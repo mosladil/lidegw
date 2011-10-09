@@ -40,7 +40,6 @@
 # Prikazy lidegw:
 #	/quote set idler (cislo > 250 | 0) [ v sekundach ] 	- nastavi udrzovac
 #	/quote set girls_highlighting (0|1) [ bool ] 		- zapne/vypne zvyrazneni holek
-#	/quote set rewrite_protocols (0|1) [ bool ]		- zapne/vypne prepisovani protokolu (napr. http -> h77p)
 #	/quote set idler_str (string) [ idler string ]		- zmeni retezec idleru
 #	/quote ison (nick) [ hledany nick ] 			- Zjisti zda je nick online, pokud se nic nevypise, tak neni online
 #	/ison nick						- totez
@@ -58,6 +57,8 @@
 #	/quote set charset CHARSET				- nastavi znakovou sadu na strane klienta, 0 vypne
 #
 # ------------------ CHANGELOG -------------------
+# lidegw-37: (deltaflyer4747)
+# Oprava charsetu pri rozdeleni textu v miste s diakritickym znakem v utf - rozdelilo jej to veprostred dvouznaku
 # lidegw-36: (deltaflyer4747)
 # Drobná oprava parsingu textu z lide.cz (top.a3 > top.a4) / bug znemoznoval cteni prichozich zprav
 # lidegw-35: (deltaflyer4747)
@@ -69,7 +70,6 @@
 #	upraven parser systemovych zprav, aby se nenechal splest vhodne zvolenym username
 #	duplex recode mezi libovolnou znakovou sadou a iso-8859-2. Ovlivnuje to commandline parametr --charset=NECO, kde NECO je znakova sada podporovana systemem (napr. utf-8, iso-8859-2, windows-1250) a /quote prikaz. Volba --utf8-lipp už není.
 #	drobná oprava metody Lide.unsmilize
-#	pridana funkce "/quote set rewrite_protocols", kterou se da zapnout (resp. vypnout) prepisovani protokolu v adrese
 # lidegw-32:
 #	pridan opraveny modul lipparser (p4t0k)
 #	ziskavani last_ID bylo dano do try bloku, stejnym zpusobem byl osetren IndexError ve funkci fromArray (p4t0k)
@@ -133,7 +133,7 @@
 #             Vsechny neparsovane systemove zpravy se zobrazuji jako NOTICE (trancelius)
 # lidegw-r10: Opraven idler, uz by mel pocitat spravne (trancelius)
 # lidegw-r09: Opraveno posilani duvodu u kicku (trancelius)
-# lidegw-r08: Opravy text_filter(), /me uz zase funguje (trancelius)
+# lidegw-r08: Opravy text_filter(), /me u zase funguje (trancelius)
 # lidegw-r07: Pridana podpora sifrovani, viz prikazy (trancelius)
 #             Opraven TOPIC (trancelius)
 #             Pri vstupu do mistnosti se vypise jeji URL (trancelius)
@@ -171,10 +171,9 @@ def log(text, level = 0):
 	if debug or level == 1:
 		print "[%s] %s" % (time.strftime('%Y/%m/%d %H:%M:%S'), text)
 
-version_ = "lidegw-36"
+version_ = "lidegw-37"
 girls_lighting = 1
-rewrite_proto = 1
-idler_str = ["\xc2", "\xc3"]
+idler_str = [":2:", ":4:"]
 if "--debug" in sys.argv:
 	import traceback
 	debug = True # tisknout vše
@@ -358,15 +357,14 @@ class Lide:
 		self.kernel.logged = False
 		self.kernel.rooms = []
 		self.kernel.girls_highlighting = girls_lighting
-		self.kernel.rewrite_protocols = rewrite_proto
 		self.kernel.idler_str = idler_str
 		self.kernel.sex = ""
 		self.kernel.asciionly = 0
 		self.kernel.timer = 6
 		self.kernel.crypto = 0
 		self.kernel.cryptokey = None
-		self.kernel.smiles = 0
-		self.kernel.urls = 1
+		self.kernel.smiles = 1
+		self.kernel.urls = 0
 		self.kernel.hashid = "" # pouziva se pri logoutu
 		self.kernel.randomnumber = 1234 # vystrel do tmy
 		self.kernel.charset = CHARSET
@@ -632,16 +630,14 @@ class Lide:
 			text = text.replace("</b>", "\002")
 			text = self.striphtml(text)
 			text = text.replace("\xc2", "\x01")
-			if self.kernel.rewrite_protocols == 1:
-				text = text.replace("h77p://", "http://")
-				text = text.replace("f7p://", "ftp://")
+			text = text.replace("h77p://", "http://")
+			text = text.replace("f7p://", "ftp://")
 		else:
-			# zjistim, jak se rekne ´ v charsetu klienta a nahradim to ascii znakem 0x27 (lide.cz to stejne prevedou zpatky na ´)
 			text = text.replace("´".decode("utf-8").encode(self.kernel.charset), "'")
 			text = text.replace("\x01", "\xc2")
-			if self.kernel.rewrite_protocols == 1:
-				text = text.replace("http://", "h77p://")
-				text = text.replace("ftp://", "f7p://")
+			#text = text.replace("\x01", "\xc3\x82")
+#			text = text.replace("http://", "h77p://")
+#			text = text.replace("ftp://", "f7p://")
 		# ascii cast
 		if self.kernel.asciionly == 1 or (self.kernel.asciionly == 2 and odkud == 0) or (self.kernel.asciionly == 3 and odkud == 1):
 			if odkud == 1: # text z chatu
@@ -673,12 +669,6 @@ class Lide:
 		
 		if self.kernel.charset not in ["latin2", "iso-8859-2", "iso8859-2"]:
 			text = self.recode(text, 0)
-			
-		try:
-			croom.c2time = re.findall('<INPUT TYPE="hidden" NAME="c2time" VALUE="(\d+)" />', s)[0]
-			croom.hashid_text = re.findall('<input type="hidden" name="hashId" value="(\d+)" />', s)[0]
-		except:
-			log("!!! c2time/hashId", 1)
 		
 		pole = {
 			'akce': "text",
@@ -698,6 +688,11 @@ class Lide:
 		try:
 			s = self.kernel.urlopen("%s?%s" %(self.kernel.room_url, croom.c1time), params).read()
 			# tímhle si nejsem moc jistej UPDATE: jde to :o)
+			try:
+				croom.c2time = re.findall('<INPUT TYPE="hidden" NAME="c2time" VALUE="(\d+)" />', s)[0]
+				croom.hashid_text = re.findall('<input type="hidden" name="hashId" value="(\d+)" />', s)[0]
+			except:
+				log("!!! c2time/hashId", 1)
 			return True
 		except:
 			if traceback:
@@ -1097,11 +1092,9 @@ class Lide:
 						isPM = False
 					else:
 						isPM = True
-					
-					# popelnicovi klienti ignoruji RFC a neposilaji dvojtecku
+
 					if not cmd[2].startswith(":"):
 						cmd[2] = ":%s" %(cmd[2])
-					
 					text = ' '.join(cmd[2:])[1:]
 					
 					# filtry
@@ -1116,6 +1109,7 @@ class Lide:
 					
 					elif cmd[2].find("PONG") == 2:
 						text = "/m %s \xc2PONG %s" %(cmd[1], cmd[3].replace("\x01","\xc2") )
+						text = text.decode(self.kernel.charset).encode("iso-8859-2")
 						log(text, 1)
 					# narezeme text na 350B oddily
 					msg_len = 350
@@ -1234,19 +1228,6 @@ class Lide:
 								else:
 									 self.socket.send(":%s 421 %s Zvyrazneni slecen zapnuto :)\n" %(self.kernel.me, self.kernel.nick))
 							else:
-								self.socket.send(":%s 421 %s Hodnota musi byt 1 nebo 0!\n" %(self.kernel.me, self.kernel.nick))
-					elif cmd[1].upper() == "REWRITE_PROTOCOLS":
-						if len(cmd[2]) == 1:
-							try:
-								num = int(cmd[2])
-								if num == 0 or num == 1:
-									self.kernel.rewrite_protocols = num
-									if num == 0:
-										 self.socket.send(":%s 421 %s Prepisovani protokolu vypnuto.\n" %(self.kernel.me, self.kernel.nick))
-									else:
-										 self.socket.send(":%s 421 %s Prepisovani protokolu zapnuto.\n" %(self.kernel.me, self.kernel.nick))
-								else: raise
-							except:
 								self.socket.send(":%s 421 %s Hodnota musi byt 1 nebo 0!\n" %(self.kernel.me, self.kernel.nick))
 					
 					elif cmd[1].upper() == "IDLER_STR":
@@ -1388,6 +1369,7 @@ class Lide:
 					except:
 						return 0
 
+					if not d: d = []
 					for line in d:
 						s = s + ":NOTICE %s\n" %(line)
 						# konec listu
@@ -1418,6 +1400,8 @@ class Lide:
 					if len(cmd) == 3:
 						self.sendText("/kick "+cmd[2], cmd[1].lstrip('#')) # nick, room
 					elif len(cmd) > 3:
+						if not cmd[3].startswith(":"):
+							cmd[3] = ":%s" %(cmd[3])
 						reason = ' '.join(cmd[3:])[1:] # dvojtecku nechceme
 						self.sendText("/kick %s %s" %(cmd[2], reason), cmd[1].lstrip('#')) # nick, room
 				#
@@ -1523,7 +1507,6 @@ class getMessages(threading.Thread):
 						break
 				
 				pattren = re.compile("top.a4[(](.+),'.+','(.+)','(.+)','',.+,.+,.+,'','(.+)'.+")
-				
 				#datos = re.findall(pattren,s)
 				
 				if int(croom.last) > 0:
@@ -1620,7 +1603,7 @@ class IRCClient(threading.Thread):
 		log("Nove spojeni z %s" %(self.address[0]), 1)
 		
 		myInst = Lide(self.socket, self.address[0])
-		
+				
 		while self.running:
 			log("ircc, cycle")
 			myTime = int(time.time())
