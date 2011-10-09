@@ -172,7 +172,7 @@ class myparser:
 		#@-> self.vek
 		self.vek = re.findall(r'([\d|\?]* let)',self.profile)
 		#@-> self.pohlavi
-		poh = re.findall(r'img/ico-(.{1,6}).gif',self.profile)
+		poh = re.findall(r'img/common/ico-(.).{0,5}.gif',self.profile)
 		if poh[0] == 'M': self.pohlavi = 'Mu\xbe'
 		elif poh[0] == 'F': self.pohlavi = '\xaeena'
 		else: self.pohlavi = 'nezn\xe1m\xe9'
@@ -263,7 +263,7 @@ class myparser:
 		#@-> self.seznameni_info
 		self.seznameni_info = self._komentar('Sezn.men')
 		#@-> self.zavislosti_info
-		self.zavislosti_info = re.findall(r'<h3>Z.vislosti.*?<p>(.+?)</p><div id="adPRclanek"',self.profil)
+		self.zavislosti_info = self._komentar('Z.vislosti')
 	def _komentar(self,regexp):
 		"""parsuje nektere komentarove promenne (to jsou vsechny promenne s suffixem _info)"""
 		try:

@@ -1,9 +1,9 @@
-#! /bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # IRC brana na webchat lide.cz
 #	diky niz se lze pripojit na lide.cz
-#	pres IRC klienta (xchat,irssi,mIRC)
+#	pres IRC klienta (xchat, irssi, mIRC)
 #	je mozne pouziti eggdropa a jinych
 #	jiz hotovyh botu.
 #
@@ -19,8 +19,11 @@
 #	Trancelius
 #	http://lidegw.wz.cz/
 #
+#	Přemysl Janouch
+#	p.janouch@gmail.com
+#
 # Provoz:
-#	Je zapotrebi python, nejlepe ve verzi 2.3 nebo novejsi
+#	Je zapotrebi Python, nejlepe ve verzi 2.3 nebo novejsi
 #	
 #	na POSIX-like systemech (Linux, BSD, ...):
 #		$ python lidegw
@@ -56,6 +59,11 @@
 #	/quote set charset CHARSET				- nastavi znakovou sadu na strane klienta, 0 vypne
 #
 # ------------------ CHANGELOG -------------------
+# lidegw-45:
+#	  * poopraveno odstraňování uživatel z místností kvůli neaktivitě (warriant)
+#	  * opraveno pro Python 2.6 (warriant)
+#	  * opraven příkaz LIST pro nynější Lidé (warriant)
+#	  * opět funkční WHOIS (warriant)
 # lidegw-44:
 #	  * a teď už to fakt funguje, honest ! (trancelius)
 # lidegw-43:
@@ -169,11 +177,23 @@
 #
 # Beta testeri: vsichni uzivatele lidegw jsou vlastne testery, dekujeme vam
 
-import copy, md5, os, re, socket, string, sys, threading, time, urllib, urllib2, random
+import copy, os, re, socket, string, sys, threading, time, urllib, urllib2, random
+
 traceback = None
 lipparser = None
 rtime = None
+
 import traceback
+
+try:
+	import hashlib
+except:
+	import md5
+	class Hashlib:
+		def md5 (self, d):
+			return md5.new(d)
+	hashlib = Hashlib()
+
 try:
 	import lipparser
 except:
@@ -188,7 +208,7 @@ def log(text, level = 0):
 	if debug or level == 1:
 		print "[%s] %s" % (time.strftime('%Y/%m/%d %H:%M:%S'), text)
 
-version_ = "lidegw-44"
+version_ = "lidegw-45"
 girls_lighting = 1
 idler_str = ["\xc2", "\xc3"]
 if "--debug" in sys.argv:
@@ -226,7 +246,7 @@ world.welcome = ''':%s 001 %s :
 Vitam te na %s
    
 Lide.cz <-> IRC brana, verze %s
-(cc) Gimper, p4t0k, Trancelius
+(cc) Gimper, p4t0k, Trancelius, Přemysl Janouch
    
    
      MMMMMMM:               ,M
@@ -280,26 +300,26 @@ def fromArray(array, key):
 
 # zaregistrujeme lidegw, at je trochu prehled o siri uzivatelske zakladny (na serveru se ulozi md5 ip adresy)
 #if os.name in ('posix', 'mac'):
-	#savedir = os.getenv("HOME")
+#	savedir = os.getenv("HOME")
 #elif os.name == 'nt' and os.getenv("HOMEPATH"):
-	#if os.getenv("HOMESHARE"):
-		#savedir = os.getenv("HOMESHARE") + os.getenv("HOMEPATH")
-	#else:
-		#savedir = os.getenv("HOMEDRIVE") + os.getenv("HOMEPATH")
+#	if os.getenv("HOMESHARE"):
+#		savedir = os.getenv("HOMESHARE") + os.getenv("HOMEPATH")
+#	else:
+#		savedir = os.getenv("HOMEDRIVE") + os.getenv("HOMEPATH")
 #else:
-	#savedir = os.path.dirname(sys.argv[0])
+#	savedir = os.path.dirname(sys.argv[0])
 
 #reg_file = os.path.join(savedir, ".lidegw_registered")
 
 # hehe, hadejte proc :))
 #if (not os.path.exists(reg_file) and "--no-reg" not in sys.argv) or "--reg" in sys.argv:
-	#reg_r = urllib.urlopen("http://elatio.wz.cz/rpc/rpc_register.php")
-	#reg_d = reg_r.read()
-	#if "registered_ok" in reg_d:
-		#log("Registrovanych uzivatelu: %s" %(len(reg_d.strip().split("\n"))), 1)
-		#try:
-			#open(reg_file, "w")
-		#except(IOError): pass
+#	reg_r = urllib.urlopen("http://elatio.wz.cz/rpc/rpc_register.php")
+#	reg_d = reg_r.read()
+#	if "registered_ok" in reg_d:
+#		log("Registrovanych uzivatelu: %s" %(len(reg_d.strip().split("\n"))), 1)
+#		try:
+#			open(reg_file, "w")
+#		except(IOError): pass
 
 class Collector(threading.Thread):
 	def __init__(self):
@@ -311,7 +331,7 @@ class Collector(threading.Thread):
 		while self.running:
 			vlaken = len(world.vlakna)
 			for vlakno in world.vlakna:
-				if not vlakno.isAlive() and vlakno._Thread__started:
+				if not vlakno.isAlive() and vlakno._Thread__started.is_set():
 					world.vlakna.remove(vlakno)
 					log("collector, purging %s" %(vlakno))
 					del vlakno
@@ -326,7 +346,7 @@ class Collector(threading.Thread):
 	def start_threads(self):
 		try:
 			for vlakno in world.vlakna:
-				if not vlakno._Thread__started:
+				if not vlakno._Thread__started.is_set():
 					vlakno.start()
 		except:
 			log("Vlakno odmita startovat, pravdepodobne dosla pamet.", 1)
@@ -371,10 +391,10 @@ class lide:
 	auth		= ""
 	s		= ""
 	ERROR		= ""
-	room		=  0
-	logged		=  0
-	kernel		=  0
-	idle_interval	=  0
+	room		= 0
+	logged		= 0
+	kernel		= 0
+	idle_interval	= 0
 	rooms		= []
 	mainurl 	= "http://chat.lide.cz/index.fcgi"
 	loginurl	= "https://login.szn.cz/loginProcess"
@@ -433,7 +453,7 @@ class Lide:
 			'forceRelogin': "0",
 		}
 		
-		# podpora jinych domen (stejne to nebude vsude fungovat)
+		# support for other domains (won't work everywhere, though)
 		at = self.kernel.nick.find("@")
 		if at != -1:
 			pole['username'] = self.kernel.nick[:at]
@@ -464,7 +484,7 @@ class Lide:
 							#('Accept-Encoding', 'gzip,deflate'),
 							#]
 			
-			# ještě hashid
+			# hashid
 			data = self.kernel.urlopen("http://chat.lide.cz/").read()
 			self.kernel.hashid = re.findall('hashId=(\d+)"', data)[0]
 		except:
@@ -474,22 +494,23 @@ class Lide:
 	
 	def listRooms(self):
 		"""Metoda pro /list - vypis mistnosti"""
-		try:
-			r = self.kernel.urlopen("%s?akce=rooms" %(self.kernel.mainurl))
-		except:
-			raise
+		data = []
+		# there's eight room categories (unlikely to change)
+		for i in range(1, 8):
+			try:
+				r = self.kernel.urlopen("%s?akce=rooms&category_ID=%d" %(self.kernel.mainurl, i))
+			except:
+				raise
 
-		s = r.read()
+			s = r.read()
+			s = str.join('',s.splitlines())
+			s = s.replace('\t','')
 
-		s = str.join('',s.splitlines())
+			s = s.replace('<tr class="row1">','<tr class="row1">\n')
+			s = s.replace('<tr class="row0">','<tr class="row0">\n')
+			s = s.replace('</tr>','</tr>\n')
 
-		s = s.replace('\t','')
-
-		s = s.replace('<tr class="row1">','<tr class="row1">\n')
-		s = s.replace('<tr class="row0">','<tr class="row0">\n')
-		s = s.replace('</tr>','</tr>\n')
-
-		data = re.findall(r'<td class="right w">(.+)<td class="center"><strong><a href="room.fcgi.+auth=.*room_ID=(.+)">(.+)</a></strong><div>st.+l.+stnost.+<td class="center w">(.+)</td></tr>',s)
+			data = data + re.findall(r'<td class="right w">(.+)<td class="center"><strong><a href="room.fcgi.+auth=.*room_ID=(.+)">(.+)</a></strong><div>st.+l.+stnost.+<td class="center w">(.+)</td></tr>',s)
 
 		return data
 	
@@ -817,10 +838,10 @@ class Lide:
 			sex = "boys"
 		if type == 0:
 			#return "%s!%s@%s.%sIP.%s" %(nick, vy[0:9], vy[0:9], vy[10:15].upper(),self.kernel.me)
-			return "%s!%s@%s.lide.cz" %(nick, nick, sex)
+			return "%s!%s@%s" %(nick, nick, sex)
 		elif type == 1:
 			#return "%s.%sIP.%s" %(vy[0:9], vy[10:15].upper(), self.kernel.me)
-			return "%s.lide.cz" %(sex)
+			return sex
 		elif type == 2:
 			#return vy[0:9]
 			return nick
@@ -1146,7 +1167,7 @@ class Lide:
 				# ----- PART -----
 				#
 				elif cmd[0].upper() == "PART" :
-					if len(cmd) < 2: # w zmena -- pridano
+					if len(cmd) < 2:
 						self.socket.send(":%s 461 %s %s :Not enough parameters\n" % (self.kernel.me, self.kernel.nick, "PART"))
 					else:
 						# sptripnu vsechny '#' od zacatku
@@ -1506,9 +1527,9 @@ class Lide:
 								sex = 'girls'
 							elif re.search("Mu.", line):
 								sex = 'boys'
-						s = s + ":%s NOTICE %s :%s\n" % (self.kernel.me, self.kernel.nick, line)
+						s = s + ":%s PRIVMSG %s :%s\n" % (self.kernel.me, self.kernel.nick, line)
 						# konec listu
-					s = s + ":%s 311 %s %s %s %s * :%s\n" %(self.kernel.me, self.kernel.nick, c, c, sex, name) # w zmena -- pridano
+					s = s + ":%s 311 %s %s %s %s * :%s\n" %(self.kernel.me, self.kernel.nick, c, c, sex, name)
 					if channels:
 						s = s + ":%s 319 %s %s :#%s\n" % (self.kernel.me, self.kernel.nick, c, ' #'.join(channels))
 					s = s + ":%s 318 %s %s :End of /WHOIS list.\n" %(self.kernel.me, self.kernel.nick, c)
@@ -1541,7 +1562,7 @@ class Lide:
 							cmd[3] = ":%s" %(cmd[3])
 						reason = ' '.join(cmd[3:])[1:] # dvojtecku nechceme
 						self.sendText("/kick %s %s" %(cmd[2], reason), cmd[1].lstrip('#')) # nick, room
-					else: # w zmena -- pridano
+					else:
 						self.socket.send(":%s 461 %s %s :Not enough parameters\n" % (self.kernel.me, self.kernel.nick, "KICK"))
 				#
 				# ----- OTHER -----
@@ -1665,15 +1686,16 @@ class getMessages(threading.Thread):
 								tosend = ":%s NOTICE #%s :%s\n" %(self.inst.kernel.me, croom.room, cmsg.text)
 							elif cmsg.type == 1:
 								# tahle cast prida usera do kernel.rooms, kvuli sexum v hashi
+								# w zmena -- opraveno odchazeni neaktivnich
 								pair_updated = False
-								for pair_id in range(len(self.inst.kernel.room.users)):
-									pair = self.inst.kernel.room.users[pair_id]
+								for pair_id in range(len(croom.users)):
+									pair = croom.users[pair_id]
 									if pair[0].upper() == cmsg.target.upper():
 										#print pair, "->", (cmsg.target, cmsg.nick)
-										self.inst.kernel.room.users[pair_id] = (cmsg.target, cmsg.nick)
+										croom.users[pair_id] = (cmsg.target, cmsg.nick)
 										pair_updated = True
 								if not pair_updated:
-									self.inst.kernel.room.users.append((cmsg.target, cmsg.nick))
+									croom.users.append((cmsg.target, cmsg.nick))
 								
 								tosend = ":%s JOIN #%s\n" %(self.inst.hash(cmsg.target,""), croom.room)
 								pretend = self.inst.isOP((cmsg.target,cmsg.nick),croom)
@@ -1733,7 +1755,7 @@ class getMessages(threading.Thread):
 					# idler
 					myTime = time.time()
 					if (myTime - croom.last_idle) >= self.inst.kernel.idle_interval and self.inst.kernel.idle_interval != 0:
-						self.inst.socket.send(":%s NOTICE #%s :Idler - [ %s ]\n" %(self.inst.kernel.me, croom.room, md5.new(str(myTime)).hexdigest()))
+						self.inst.socket.send(":%s NOTICE #%s :Idler - [ %s ]\n" %(self.inst.kernel.me, croom.room, hashlib.md5(str(myTime)).hexdigest()))
 						croom.last_idle = myTime
 						self.inst.sendText(croom.idler_str[0], croom.room)
 						croom.idler_str = [croom.idler_str[1], croom.idler_str[0]] # prohodime idler
