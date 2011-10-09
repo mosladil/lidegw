@@ -17,8 +17,7 @@
 #	http://vypnuto.ic.cz/
 #	
 #	Trancelius
-#	trancelis@centrum.cz
-#	http://elatio.wz.cz/
+#	http://lidegw.wz.cz/
 #
 # Provoz:
 #	Je zapotrebi python, nejlepe ve verzi 2.3 nebo novejsi
@@ -57,12 +56,30 @@
 #	/quote set charset CHARSET				- nastavi znakovou sadu na strane klienta, 0 vypne
 #
 # ------------------ CHANGELOG -------------------
-# lidegw-37: (deltaflyer4747)
-# Oprava charsetu pri rozdeleni textu v miste s diakritickym znakem v utf - rozdelilo jej to veprostred dvouznaku
+# lidegw-44:
+#	  * a teď už to fakt funguje, honest ! (trancelius)
+# lidegw-43:
+#	kumulativni backport z ruznych vetvi lidegw
+#	  * podpora pro prihlaseni z jinych domen (warriant)
+#	  * opravy implementace RFC 2812 (warriant)
+#	  * podpora pro zaheslované místnosti (warriant)
+#	  * rozsireni WHOIS (warriant)
+#	  * dokoncena oprava synchronizace user listu (trancelius)
+#	  * drobne upravy, e.g. rozliseni Odesel/Odesla u PART (warriant)
+#	  * dalsi jednoradkovy fixy
+# lidegw-42: # hadejte proc 42 ^^
+#	opraveno odhlasovani po cca 2 hodinach kvuli chybnemu nacitani c2time (@ALiEN-COOL)
+#	opraveno neodstranovani odchazejicich useru z user listu - workaround chyby lide.cz (trancelius)
+# lidegw-38:
+#	uprava chovani unsmilize (trancelius, lukasekprochazka)
+# lidegw-37:
+#	upgrade k lide.cz z 7.11.2008
+#	  * http 500 error naraficenej na ty, kteri pouzivaji validni http pozadavky - jo, my jedini jsme je pouzivali (trancelius)
+#	  * a hele, uz tam neni http 302 redirect :-) (mladoucka14)
 # lidegw-36: (deltaflyer4747)
-# Drobná oprava parsingu textu z lide.cz (top.a3 > top.a4) / bug znemoznoval cteni prichozich zprav
+#	Drobná oprava parsingu textu z lide.cz (top.a3 > top.a4) / bug znemoznoval cteni prichozich zprav
 # lidegw-35: (deltaflyer4747)
-# Oprava charsetu i pro TOPIC mistnosti
+#	Oprava charsetu i pro TOPIC mistnosti
 # lidegw-34: (deltaflyer4747)
 #	nahrazeni ´ -> ' kvuli konverzi znakovych sad
 #	hack pro nevalidni klienty typu Miranda (co neposilaji dvojtecku pred datovou casti)
@@ -133,7 +150,7 @@
 #             Vsechny neparsovane systemove zpravy se zobrazuji jako NOTICE (trancelius)
 # lidegw-r10: Opraven idler, uz by mel pocitat spravne (trancelius)
 # lidegw-r09: Opraveno posilani duvodu u kicku (trancelius)
-# lidegw-r08: Opravy text_filter(), /me u zase funguje (trancelius)
+# lidegw-r08: Opravy text_filter(), /me uz zase funguje (trancelius)
 # lidegw-r07: Pridana podpora sifrovani, viz prikazy (trancelius)
 #             Opraven TOPIC (trancelius)
 #             Pri vstupu do mistnosti se vypise jeji URL (trancelius)
@@ -171,9 +188,9 @@ def log(text, level = 0):
 	if debug or level == 1:
 		print "[%s] %s" % (time.strftime('%Y/%m/%d %H:%M:%S'), text)
 
-version_ = "lidegw-37"
+version_ = "lidegw-44"
 girls_lighting = 1
-idler_str = [":2:", ":4:"]
+idler_str = ["\xc2", "\xc3"]
 if "--debug" in sys.argv:
 	import traceback
 	debug = True # tisknout vše
@@ -211,7 +228,29 @@ Vitam te na %s
 Lide.cz <-> IRC brana, verze %s
 (cc) Gimper, p4t0k, Trancelius
    
- *** all your base are belong to us ***
+   
+     MMMMMMM:               ,M
+     MMMMMMM:                   ::
+     MMMMMMM:
+     MMMMMMM:                 MM,
+     MMMMMMM:                     MM
+     MMMMMMM:               ,M
+     MMMMMMM:                MMMMM
+    ,MMMMMMM:                    MMM:
+    ,MMMMMMM:               ,
+    ,MMMMMMM:               ,MMM=
+    ,MMMMMMM:               ,MMMMMMM,
+    ,MMMMMMM:                  MMMMM:
+    ,MMMMMMM:                      M:
+    ,MMMMMMM:               :MM
+    ,MMMMMMMM               MMMMMM=
+    ,MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM:
+      MMMMMMMMMMMMMMMMMMMMMMMMMMMMM:
+       MMMMMMMMMMMMMMMMMMMMMMMMMMM
+   
+          http://lidegw.wz.cz/
+   
+  *** all your base are belong to us ***
    
 MiniHelp:
    
@@ -220,8 +259,6 @@ Pro vypsani jen urciteho roomu napiste /list <nazev>
 Do mistnosti vstupte pomoci /join <#ID_mistnosti>
 Informace o uzivateli vypisete prikazem /whois <nick> // tato funkce vyzaduje modul lipparser
    
-Lide.cz ticket: %s
-Lide.cz hash: %s
 Pri vstupu do mistnosti ti bude vypsana jeji URL, ale nejdriv je potreba pouzit ticket.
 (stejne to asi nebude fungovat)
    
@@ -323,6 +360,8 @@ class room:
 	last_idle	=  0
 	hashid_text	= "" # pouziva se pri odeslani zprav
 	hashid_part	= "" # pouziva se pri opusteni roomu
+	update_time	= 0 # pouziva se pri updatovani user listu
+	suspected_tout  = [] # podezreli, ze uz nejsou v mistnosti
 
 class lide:
 	"""Struktura spojeni uzivatele"""
@@ -338,7 +377,7 @@ class lide:
 	idle_interval	=  0
 	rooms		= []
 	mainurl 	= "http://chat.lide.cz/index.fcgi"
-	loginurl	= "https://login.seznam.cz/loginProcess"
+	loginurl	= "https://login.szn.cz/loginProcess"
 	profile 	= "http://profil.lide.cz/profile.fcgi"
 	room_url	= "http://chat.lide.cz/room.fcgi"
 	me		= "lide.cz"
@@ -363,8 +402,8 @@ class Lide:
 		self.kernel.timer = 6
 		self.kernel.crypto = 0
 		self.kernel.cryptokey = None
-		self.kernel.smiles = 1
-		self.kernel.urls = 0
+		self.kernel.smiles = 0
+		self.kernel.urls = 1
 		self.kernel.hashid = "" # pouziva se pri logoutu
 		self.kernel.randomnumber = 1234 # vystrel do tmy
 		self.kernel.charset = CHARSET
@@ -382,23 +421,37 @@ class Lide:
 		pole = {
 			'username': self.kernel.nick,
 			'password': self.kernel.passwd,
-			'domain': "seznam.cz", # zatim to stačí takhle
+			'domain': "seznam.cz",
 			'remember': "1",
 			'serviceId': "lide",
 			'disableSSL': "0",
 			'forceSSL': "0",
 			'lang': "cz",
-			'template': "html",
+			'loginType': 'seznam',
 			'lang': "cz",
-			'loggedURL': "http://www.lide.cz/",
-			'loginFormIsSSL': "1",
+			'returnURL': "http://www.lide.cz/",
+			'forceRelogin': "0",
 		}
+		
+		# podpora jinych domen (stejne to nebude vsude fungovat)
+		at = self.kernel.nick.find("@")
+		if at != -1:
+			pole['username'] = self.kernel.nick[:at]
+			pole['domain'] = self.kernel.nick[at + 1:]
+		
 		params = urllib.urlencode(pole).replace('%3A',':')
 		try:
 			self.updateCookie()
 			data = self.kernel.urlopen(self.kernel.loginurl, params).read()
 			self.kernel.ticket = re.findall('url=(http://[^"]+)"', data)[0]
-			url, self.kernel.auth = self.kernel.urlopen(self.kernel.ticket)
+			# okay, this part's hilarious: we have to translate &amp;s into &s, because the server checks for it and DENIES ACCESS with 500s to everyone not doing it... madness
+			self.kernel.ticket = self.kernel.ticket.replace("&amp;", "&")
+			# this part's no longer doin' it for us
+			#url, self.kernel.auth = self.kernel.urlopen(self.kernel.ticket)
+			
+			# so we do it like this
+			response = self.kernel.urlopen(self.kernel.ticket)
+			self.kernel.auth = re.findall("ds=(.+);\s*[pP]ath", response.headers.getheader("Set-cookie"))[0]
 			self.updateCookie()
 			#self.kernel.opener.addheaders.append()
 							#('User-Agent', 'Mozilla/5.0 (X11; U; Linux i686; cs; rv:1.8.0.7) Gecko/20060909 Firefox/1.5.0.7'),
@@ -412,9 +465,10 @@ class Lide:
 							#]
 			
 			# ještě hashid
-			data = self.kernel.urlopen("http://chat.lide.cz"+url).read()
+			data = self.kernel.urlopen("http://chat.lide.cz/").read()
 			self.kernel.hashid = re.findall('hashId=(\d+)"', data)[0]
 		except:
+			traceback.print_exc()
 			self.kernel.ERROR = ":%s %s\n" %(self.kernel.me, "ERROR: Can't login to lide.cz")
 			raise
 	
@@ -442,7 +496,7 @@ class Lide:
 	def setGirlsPrefix(self):
 		"""Metoda posle zmenu kanalum"""
 		for croom in self.kernel.rooms:
-			croom.users = self.getChannelUsers(croom.room)
+			croom.users = self.getChannelUsers(croom)
 			s = ""
 			for user in croom.users:
 				s = "%s%s%s " %(s, self.isOP(user, croom), user[0] )
@@ -460,7 +514,7 @@ class Lide:
 	def getWhois(self, nick):
 		"""getWhois metoda"""
 		if not lipparser:
-			return False
+			return []
 		lipp = lipparser.myparser(nick)
 		output = []
 		for chapter in ['Z\xe1kladn\xed \xfadaje','Statistick\xe9 \xfadaje','\xdadaje na profil','Postava','Povaha','Kon\xed\xe8ky','Dom\xe1cnost','Sezn\xe1men\xed','Z\xe1vislosti']:
@@ -504,7 +558,7 @@ class Lide:
 						utf.append(line.decode("iso-8859-2").encode(self.kernel.charset))
 					rt_info = utf
 				for line in rt_info:
-					s += ":NOTICE %s\n" % (line)
+					s += ":%s NOTICE %s\n" % (self.kernel.me, line)
 				#s += ":%s 318 %s %s :End of /INFO list.\n\n" % (self.kernel.me, self.kernel.nick, `rid`)
 			else:
 				s += ":%s 323 %s :%s\n" %(self.kernel.me, self.kernel.nick, rt_info)
@@ -512,20 +566,29 @@ class Lide:
 		else:
 			return None
 	
-	def joinit(self,Aroom):
+	def joinit(self, Aroom, key = None):
 		"""\
 		joinit metoda - vysle pozadavek metode self.kernel.urlopen (ta je jen 'volanim' urllib.urlopen), ktera vrati stanku s mistnosti
 		nebo s informaci o neexistenci mistnosti. Navratova hodnota metody joinit je True v pripade uspechu, False == neuspech
 		"""
 		
 		try:
-			r = self.kernel.urlopen("%s?room_ID=%s" %(self.kernel.room_url, Aroom))
+			if key:
+				pole = {'enter_passwd': key, 'room_ID': Aroom}
+				params = urllib.urlencode(pole).replace('%3A',':')
+				r = self.kernel.urlopen(self.kernel.room_url, params)
+			else:
+				r = self.kernel.urlopen("%s?room_ID=%s" %(self.kernel.room_url, Aroom))
 		except:
 			return False
 		
 		s = r.read()
 		kick = re.findall('<p><P>Vstup odm.tnut kv.li vykopnut.. N.vrat je mo.n. za <span class="red">(\d+?)</span> minut.</P> <P>Byl jste vykopnut spr.vcem <span class="red">(.+?)</span></P> <P>Vzkazuje V.m: <span class="red">(.*?)</span></P></p>', s)
-		if "stnost neexistuje" not in s and not kick:
+		
+		pwd = re.search('<p>Vstup do m.stnosti <b>.*</b> je pouze pomoc. hesla!</p>', s)
+		hours = re.findall('<p>Pro vstup do m.stnosti je nutn. m.t nachatov.no <b>(.*)</b> hodin.</p>', s)
+
+		if "stnost neexistuje" not in s and not kick and not pwd and not hours:
 			myRoom		= room()
 			myRoom.room	= Aroom
 			myRoom.last	= "0"
@@ -547,19 +610,24 @@ class Lide:
 		elif kick:
 			k = kick[0]
 			self.socket.send(":%s 474 %s #%s :Cannot join channel (+b)\n" %(self.kernel.me, self.kernel.nick, Aroom))
-			self.info("ERROR :Vstup zakazan na %s minut. %s ti vzkazuje: %s" %(k[0], k[1], k[2]), "474")
-			return False
+			self.socket.send(":%s NOTICE %s :Vstup do #%s zakazan na %s minut. %s ti vzkazuje: %s\n" %(self.kernel.me, self.kernel.nick, Aroom, k[0], k[1], k[2]))
+		elif hours:
+			# w zmena -- pridano
+			self.socket.send(":%s 474 %s #%s :Cannot join channel (+b)\n" %(self.kernel.me, self.kernel.nick, Aroom))
+			self.socket.send(":%s NOTICE %s :Pro vstup do mistnosti #%s je nutne mit nachatovano %s hodin\n" %(self.kernel.me, self.kernel.nick, Aroom, hours[0]))
+		elif pwd:
+			# w zmena -- pridano
+			self.socket.send(":%s 475 %s #%s :Cannot join channel (+k)\n" % (self.kernel.me, self.kernel.nick, Aroom))
 		else:
 			striped = re.findall(r'<p><P>.+</P></p>', s)
 			
 			if len(striped) > 0:
 				self.socket.send(":%s 323 %s :%s\n" %(self.kernel.me, self.kernel.nick, re.sub(r'<.*?>', '', striped[0])))
-				
 				return False
 			
-			self.info("Nemohu vstoupit do mistnosti %s - mistnost neexistuje!" %(Aroom), "474")
+			self.socket.send(":%s 403 %s #%s :No such channel\n" % (self.kernel.me, self.kernel.nick, Aroom))
 			
-			return False
+		return False
 	
 	def part(self,room):
 		"""Part metoda"""
@@ -594,6 +662,8 @@ class Lide:
 				text = base64.b64decode(text[2:])
 			else:
 				encode = True
+				text = text[1:]
+			
 			output = []
 			for i in range(len(text)):
 				s = text[i]
@@ -630,14 +700,10 @@ class Lide:
 			text = text.replace("</b>", "\002")
 			text = self.striphtml(text)
 			text = text.replace("\xc2", "\x01")
-			text = text.replace("h77p://", "http://")
-			text = text.replace("f7p://", "ftp://")
 		else:
+			# zjistim, jak se rekne ´ v charsetu klienta a nahradim to ascii znakem 0x27 (lide.cz to stejne prevedou zpatky na ´)
 			text = text.replace("´".decode("utf-8").encode(self.kernel.charset), "'")
 			text = text.replace("\x01", "\xc2")
-			#text = text.replace("\x01", "\xc3\x82")
-#			text = text.replace("http://", "h77p://")
-#			text = text.replace("ftp://", "f7p://")
 		# ascii cast
 		if self.kernel.asciionly == 1 or (self.kernel.asciionly == 2 and odkud == 0) or (self.kernel.asciionly == 3 and odkud == 1):
 			if odkud == 1: # text z chatu
@@ -693,6 +759,10 @@ class Lide:
 				croom.hashid_text = re.findall('<input type="hidden" name="hashId" value="(\d+)" />', s)[0]
 			except:
 				log("!!! c2time/hashId", 1)
+				print "--- trace ---"
+				traceback.print_exc()
+				print "-------------"
+			
 			return True
 		except:
 			if traceback:
@@ -802,22 +872,52 @@ class Lide:
 		
 	
 	def getSex(self,nick,room):
+		# FIXME Unused
 		"""Metoda zjisti pohlavi uzivatele"""
 		for croom in self.kernel.rooms:
 			if croom.room == room:
-				croom.users = self.getChannelUsers(room)
+				croom.users = self.getChannelUsers(croom)
 				for u in croom.users:
 					if u[0].upper() == nick.upper():
 						return u
 		return ("","")
 	
-	def getChannelUsers(self,room):
-		"""Metoda ke zjisteni uzivatelu v mistnosti"""
+	def getChannelUsers(self, croom, force_rid=None):
+		"""
+		Metoda ke zjisteni uzivatelu v mistnosti.
+		
+		Vola se pro kazdou mistnost kazde dve minuty, kvuli odstraneni neaktivnich uzivatelu.
+		"""
+		
+		
+		if force_rid:
+			rid = force_rid
+		else:
+			rid = croom.room
+		
 		try:
-			r = self.kernel.urlopen("%s?akce=menu_users&room_ID=%s" %(self.kernel.room_url, room))
+			r = self.kernel.urlopen("%s?akce=menu_users&room_ID=%s" %(self.kernel.room_url, rid))
 		except:
 			return "0"
-		return re.findall(r"seluser\(.*,'(.*)','(.*)'\)\">.*</A>[^<]",r.read())
+		
+		users = re.findall(r"seluser\(.*,'(.*)','(.*)'\)\">.*</A>[^<]", r.read())
+		
+		if not force_rid: # nepouziva se pri prihlasovani
+			#i = 0
+			# lide.cz nepošle part, pokud user odešel na timeout
+			# tak to porovnam s tim co znam... a naposilam PARTy
+			for user in croom.users:
+				if user not in users:
+					# vznika tu něco jako 'race condition' s lide.cz
+					# řešení: když ho tu neuvidíme poprvé, dáme ho do podezřelých; když ani podruhé, tak teprve odstraníme
+					if user in croom.suspected_tout:
+						self.socket.send(":%s PART #%s :%s\n" %(self.hash(user[0],""), croom.room, "Neaktivni"))
+						croom.suspected_tout.remove(user)
+					else:
+						users.append(user) # pridam ho aby tu byl jeste pristi pruchod
+						croom.suspected_tout.append(user)
+		
+		return users
 	
 	def striphtml(self,text):
 		"""Metoda prevede HTML odkazy a nektere entity na plaintext"""
@@ -836,10 +936,11 @@ class Lide:
 	def unsmilize(self,text):
 		"""Metoda prevede graficke smajliky na text"""
 		if self.kernel.smiles == 0:
-			replace = "\002\\2\002{\\1}"
+			replace = "\002{\\2}\002"
 		else:
 			replace = ":\\1:"
-		return re.sub('<img src="http://im.lide.cz/smile/(.+?).gif" alt="(.+?)" height="15" width="15" />', replace, text)
+		
+		return re.sub('<img src=".+?smiles/([^.]+).gif" alt="(.+?)" height="15" width="15" />', replace, text)
 	
 	old = []
 	def msgDoPushq(self,text,ignore):
@@ -857,7 +958,7 @@ class Lide:
 					w = 1
 					break
 				w = 0
-			m = msg() # Legenda Magna est exanima... wohoo !! :D
+			m = msg()
 			if len(cnop) >= 8 and cnop[2] not in idler_str and w != 1:
 				try:
 					if cnop[1].replace("'","") in ["", "cls"] and cnop[3] == '':
@@ -876,10 +977,12 @@ class Lide:
 							
 							m.type = 2
 							m.target = re.findall(r'<b>(.*)</b>',t)[0]
-							if t.find("opustil") != -1:
+							if t.find("opustil ") != -1:
 								m.text = "Odesel"
+							elif t.find("opustila") != -1:
+								m.text = "Odesla"
 							else:
-								m.text = "Neaktivni"
+								m.text = "Neaktivni" # sem se to uz teoreticky nikdy nedostane
 						elif "Nelze ps" in t or " nen" in t:
 							m.type = 0
 							m.text = self.text_filter("System: %s" %t[10:], 1)
@@ -975,18 +1078,25 @@ class Lide:
 					striped_ = cmd[1].replace('#','')
 					# pokusim se vstoupit do mistnosti
 					splited = string.split(striped_,",")
+					
+					#sice to prijme jen jeden klic pro vsechna prihlaseni, ale zatim nevadi
+					key = None
+					if (len(cmd) >= 3):
+						key = cmd[2]
+					
 					for striped in splited:
 						if self.isJoined(striped) == 1:
 							log("ircc, %s already joined" %(striped))
 							continue
-						if self.joinit(striped):
+						if self.joinit(striped, key):
 							log("ircc, joined #%s" %(striped))
+							
 							# natahnu si hashIdy
 							self.kernel.room.hashid_text = self.getTextHashId(self.kernel.room)
 							self.kernel.room.hashid_part = self.getRoomHashId(self.kernel.room)
 							
 							# zjistim vsechny uzivatele na kanalu
-							self.kernel.room.users = self.getChannelUsers(striped)
+							self.kernel.room.users = self.getChannelUsers(self.kernel.room, striped)
 							# updatuju OPy
 							self.updOPs(self.kernel.room)
 							# irc klientovi poslu muj vstup a nastavim topic
@@ -1000,7 +1110,7 @@ class Lide:
 							
 							self.socket.send(":%s 332 %s #%s :[%s] %s\n" %(self.kernel.me, self.kernel.nick, striped, self.kernel.room.room_name, topic))
 							# poslu www adresu
-							self.socket.send(":%s 421 %s URL mistnosti: %s\n" %(self.kernel.me, self.kernel.nick, "http://chat.lide.cz/room.fcgi?room_ID=%s" %(striped)))
+							self.socket.send(":%s NOTICE #%s :URL mistnosti: %s\n" %(self.kernel.me, striped, "http://chat.lide.cz/room.fcgi?room_ID=%s" %(striped)))
 							# priradim uzivatele kanalu
 							s = ""
 							i = 0
@@ -1036,17 +1146,20 @@ class Lide:
 				# ----- PART -----
 				#
 				elif cmd[0].upper() == "PART" :
-					# sptripnu vsechny '#' od zacatku
-					striped = cmd[1].lstrip('#')
-					# pokusim se odejit z mistnosti
-					reason = ""
-					if len(cmd) >= 3:
-						for i in range(2,len(cmd)):
-							reason = "%s %s" %(reason, cmd[i])
-						self.sendText(reason[2:],striped)
-					
-					self.part(striped)
-					# pokud nejsem v zadne mistnosti ukoncim vlakno pro zachytavani zprav
+					if len(cmd) < 2: # w zmena -- pridano
+						self.socket.send(":%s 461 %s %s :Not enough parameters\n" % (self.kernel.me, self.kernel.nick, "PART"))
+					else:
+						# sptripnu vsechny '#' od zacatku
+						striped = cmd[1].lstrip('#')
+						# pokusim se odejit z mistnosti
+						reason = ""
+						if len(cmd) >= 3:
+							for i in range(2,len(cmd)):
+								reason = "%s %s" %(reason, cmd[i])
+							self.sendText(reason[2:],striped)
+						
+						self.part(striped)
+						# pokud nejsem v zadne mistnosti ukoncim vlakno pro zachytavani zprav
 				#
 				# ----- LIST -----
 				#
@@ -1058,7 +1171,7 @@ class Lide:
 					if len(cmd) == 1:
 						# a vypiseme je IRC klintovi
 						for room in rooms:
-							# pokud se najde minimalne nachatovana doba tak ji taky vypiseme	
+							# pokud se najde minimalne nachatovana doba tak ji taky vypiseme
 							if room[0].find("title=") != -1 :
 								msgtime = re.findall(r'.+title="(.+)".+',room[0])[0]
 								#msgtime = msgtime.split('  ')
@@ -1092,9 +1205,11 @@ class Lide:
 						isPM = False
 					else:
 						isPM = True
-
+					
+					# popelnicovi klienti ignoruji RFC a neposilaji dvojtecku
 					if not cmd[2].startswith(":"):
 						cmd[2] = ":%s" %(cmd[2])
+					
 					text = ' '.join(cmd[2:])[1:]
 					
 					# filtry
@@ -1109,7 +1224,6 @@ class Lide:
 					
 					elif cmd[2].find("PONG") == 2:
 						text = "/m %s \xc2PONG %s" %(cmd[1], cmd[3].replace("\x01","\xc2") )
-						text = text.decode(self.kernel.charset).encode("iso-8859-2")
 						log(text, 1)
 					# narezeme text na 350B oddily
 					msg_len = 350
@@ -1154,6 +1268,15 @@ class Lide:
 							self.sendText("/admin %s" %(cmd[3]), cmd[1].lstrip("#"))
 						elif cmd[2] == "-o" or cmd[2] == "-h":
 							self.sendText("/admin %s" %(self.kernel.nick), cmd[1].lstrip("#"))
+					elif len(cmd) == 2 and cmd[1][0] == "#": # vykeca nejaky normalni mod pro mistnost
+						r = self.kernel.urlopen("%s?akce=info&room_ID=%s" %(self.kernel.room_url, cmd[1][1:])).read()
+						if "stnost neexistuje" in r: # lepsi varianta? ERR_NOSUCHCHANNEL neni v RFC 2812 jako odpoved
+							self.socket.send(":%s 477 %s %s :Channel does not exist\n" % (self.kernel.me, self.kernel.nick, cmd[1]))
+						else: # mozne mody channelu: n, t (platne vzdy), k (heslo)
+							mode = "tn"
+							if re.search(r"key.gif.*Vstup pomoc. hesla", r):
+								mode = "tnk"
+							self.socket.send(":%s 324 %s %s +%s\n" % (self.kernel.me, self.kernel.nick, cmd[1], mode))
 				#
 				# ----- NAMES -----
 				#
@@ -1162,7 +1285,7 @@ class Lide:
 					for room in self.kernel.rooms:
 						if striped == room.room:
 							s = ""
-							room.users = self.getChannelUsers(room.room)
+							room.users = self.getChannelUsers(room)
 							i = 0
 							for user in room.users:
 								
@@ -1192,9 +1315,9 @@ class Lide:
 				#
 				# ----- AWAY -----
 				#
-				elif cmd[0].upper() == "AWAY" :
-				    self.socket.send(":%s 305 :You are no longer marked as being away\n" %self.kernel.nick )
-
+				elif cmd[0].upper() == "AWAY":
+					self.socket.send(":%s 305 %s :You are no longer marked as being away\n" % (self.kernel.me, self.kernel.nick))
+				
 				#
 				# ----- SET -----
 				#
@@ -1329,7 +1452,7 @@ class Lide:
 					else:
 						self.socket.send(":%s 421 %s SET->%s :Unknown command.\n" %(self.kernel.me, self.kernel.nick, cmd[1]) )
 					if send and message:
-						self.socket.send(":%s 421 %s %s\n" %(self.kernel.me, self.kernel.nick, message))
+						self.socket.send(":%s NOTICE %s :%s\n" %(self.kernel.me, self.kernel.nick, message))
 
 				#
 				# ----- LideCmd -----
@@ -1350,7 +1473,7 @@ class Lide:
                    				for room in self.kernel.rooms:
 
 							if room.room == striped:
-								room.users = self.getChannelUsers(room.room)
+								room.users = self.getChannelUsers(room)
 
 								for user in room.users:
 									self.socket.send(":%s 352 %s #%s %s %s %s %s H%s :0 %s user\n" %(self.kernel.me, self.kernel.nick, striped, self.hash(user[0],"",2), self.hash(user[0],"",1), self.kernel.me, user[0], self.isOP(user,self.kernel.room), self.kernel.me) )
@@ -1364,15 +1487,30 @@ class Lide:
 					#for c in cmd[1:]
 					c = cmd[1]
 					s = ""
+					name = ""
+					channels = []
+					sex = "unknown"
+					
 					try:
 						d = self.getWhois(c)
 					except:
 						return 0
 
-					if not d: d = []
 					for line in d:
-						s = s + ":NOTICE %s\n" %(line)
+						if re.match("On-line: ", line):
+							channels = re.findall(" \[([0-9]+)\]", line)
+						if re.match("Jm.no: ", line):
+							name = line[re.match("Jm.no: ", line).end(0):]
+						if re.match("Pohlav.: ", line):
+							if re.search(".ena", line):
+								sex = 'girls'
+							elif re.search("Mu.", line):
+								sex = 'boys'
+						s = s + ":%s NOTICE %s :%s\n" % (self.kernel.me, self.kernel.nick, line)
 						# konec listu
+					s = s + ":%s 311 %s %s %s %s * :%s\n" %(self.kernel.me, self.kernel.nick, c, c, sex, name) # w zmena -- pridano
+					if channels:
+						s = s + ":%s 319 %s %s :#%s\n" % (self.kernel.me, self.kernel.nick, c, ' #'.join(channels))
 					s = s + ":%s 318 %s %s :End of /WHOIS list.\n" %(self.kernel.me, self.kernel.nick, c)
 					self.socket.send(s)
 				#
@@ -1392,11 +1530,10 @@ class Lide:
 					if cmd[1][0] == ":":
 						cmd[1] = cmd[1][1:] # odstranění tečky
 					self.isON(cmd[1:])
-				
 				#
 				# ----- KICK -----
 				#
-				elif cmd[0].upper() == "KICK" and len(cmd) >= 2:
+				elif cmd[0].upper() == "KICK":
 					if len(cmd) == 3:
 						self.sendText("/kick "+cmd[2], cmd[1].lstrip('#')) # nick, room
 					elif len(cmd) > 3:
@@ -1404,10 +1541,12 @@ class Lide:
 							cmd[3] = ":%s" %(cmd[3])
 						reason = ' '.join(cmd[3:])[1:] # dvojtecku nechceme
 						self.sendText("/kick %s %s" %(cmd[2], reason), cmd[1].lstrip('#')) # nick, room
+					else: # w zmena -- pridano
+						self.socket.send(":%s 461 %s %s :Not enough parameters\n" % (self.kernel.me, self.kernel.nick, "KICK"))
 				#
 				# ----- OTHER -----
 				#
-				else :
+				else:
 					if cmd[0] != "":
 						self.socket.send(":%s 421 %s :%s Unknown command!\n" %(self.kernel.me, self.kernel.nick, cmd[0]) )
 						log(data, 1)
@@ -1441,11 +1580,15 @@ class getMessages(threading.Thread):
 			ignor = []
 			for croom in self.inst.kernel.rooms:
 				log("getm, processing %s" %(croom.room))
+				
 				try:
+					if croom.update_time <= time.time():
+						croom.users = self.inst.getChannelUsers(croom)
+						croom.update_time = time.time() + 60 # next update in one minute
 					# V regulernich requestech je nejaky nahodny cislo (v JS: Math.ceil(Math.random()*9999)). Napodobime to, vcetne predchoziho cisla v refereru.
 					self.inst.kernel.opener.addheaders.append(('Referer', '%s?akce=win_js&room_ID=%s&last=%s&%s' %(self.inst.kernel.room_url, croom.room, croom.last, self.inst.kernel.randomnumber)))
 					self.inst.kernel.randomnumber = random.randrange(0, 9999)
-					r = self.inst.kernel.urlopen("%s?akce=win_js&room_ID=%s&auth=&last=%s&%s" %(self.inst.kernel.room_url, croom.room, croom.last, self.inst.kernel.randomnumber))
+					r = self.inst.kernel.urlopen("%s?akce=win_js&room_ID=%s&last=%s&%s" %(self.inst.kernel.room_url, croom.room, croom.last, self.inst.kernel.randomnumber))
 					# takže :D budem tady číhat na cookie se změnou haška, pokud bude, tak ji chytneme a přijmeme za vlastní.
 					# Pokud ne, tak budem dělat že se nic nestalo. Ale ona stejně přijde. -TT
 					try:
@@ -1507,6 +1650,7 @@ class getMessages(threading.Thread):
 						break
 				
 				pattren = re.compile("top.a4[(](.+),'.+','(.+)','(.+)','',.+,.+,.+,'','(.+)'.+")
+				
 				#datos = re.findall(pattren,s)
 				
 				if int(croom.last) > 0:
@@ -1544,8 +1688,12 @@ class getMessages(threading.Thread):
 								# aktualizuju seznam OP
 								self.inst.updOPs(croom)
 								tosend = ":%s PART #%s :%s\n" %(self.inst.hash(cmsg.target,""), croom.room, cmsg.text)
+								for user in croom.users:
+									if cmsg.target.lower() == user[0].lower():
+										log("getm, removing %s from #%s (part)" %(user[0], croom.room))
+										croom.users.remove(user)
 							elif cmsg.type == 3:
-								tosend = ":%s PRIVMSG %s :%s\n" %(self.inst.hash(cmsg.nick,""), cmsg.nick, cmsg.text)
+								tosend = ":%s PRIVMSG %s :%s\n" %(self.inst.hash(cmsg.nick,""), self.inst.kernel.nick, cmsg.text)
 								ignor.append(cmsg.nick+cmsg.text)
 							elif cmsg.type == 4:
 								tosend = ":%s NOTICE %s :%s\n" %(self.inst.hash(cmsg.nick,""), self.inst.kernel.nick, cmsg.text)
@@ -1553,6 +1701,10 @@ class getMessages(threading.Thread):
 								tosend = ":%s PRIVMSG #%s :%s\n" %(self.inst.hash(cmsg.nick,""), croom.room, cmsg.text)
 							elif cmsg.type == 6:
 								tosend = ":%s KICK #%s %s :%s\n" %(self.inst.hash(cmsg.nick,""), croom.room, cmsg.target, cmsg.text)
+								for user in croom.users:
+									if cmsg.target.lower() == user[0].lower():
+										log("getm, removing %s from #%s (kick)" %(user[0], croom.room))
+										croom.users.remove(user)
 							elif cmsg.type == 7:
 								tosend = ":%s MODE #%s +h %s\n" %(cmsg.nick, croom.room, cmsg.target)
 								# odstranime staryho half-opa
@@ -1603,7 +1755,7 @@ class IRCClient(threading.Thread):
 		log("Nove spojeni z %s" %(self.address[0]), 1)
 		
 		myInst = Lide(self.socket, self.address[0])
-				
+		
 		while self.running:
 			log("ircc, cycle")
 			myTime = int(time.time())
@@ -1611,9 +1763,9 @@ class IRCClient(threading.Thread):
 			try:
 				ircdata = myInst.socket.recv(2**13)
 				if (myInst.parseIRCData(ircdata,myTime) == 2):
-					return 0
+					break
 			except:
-				log("Spojeni s %s zavreno." %(self.address[0]), 1)
+				log("Spojeni z %s uzavreno." %(self.address[0]), 1)
 				if traceback:
 					traceback.print_exc()
 				myInst.connection = False
@@ -1631,7 +1783,7 @@ class IRCClient(threading.Thread):
 					myInst.kernel.logged = True
 					log("ircc, login succeeded")
 					# WELCOME MESSAGE
-					myInst.socket.send(world.welcome %(myInst.kernel.me, myInst.kernel.nick, myInst.socket.getsockname()[0], version_, myInst.kernel.ticket, myInst.kernel.auth))
+					myInst.socket.send(world.welcome %(myInst.kernel.me, myInst.kernel.nick, myInst.socket.getsockname()[0], version_))
 					# End of MOTD
 					myInst.socket.send(":%s 376 %s :End of MOTD\n" %(myInst.kernel.me, myInst.kernel.nick))
 					# messages
@@ -1652,6 +1804,8 @@ class IRCClient(threading.Thread):
 					# ukoncim vlakno pro spojeni
 					myInst.connecteion = 0
 					return False
+		
+		log("Spojeni z %s uzavreno" %(self.address[0]), 1)
 		log("ircc, shutdown")
 
 # vytvorim socket
