@@ -1,0 +1,120 @@
+lidegw-46:
+	Opraveno rozlisovani stalych a docasnych operatoru (p4t0k)
+	Pridan prevod znakove sady pro prikaz /list vypisu, podle /quote set charset <sada> (p4t0k)
+lidegw-45:
+	Poopraveno odstraňování uživatel z místností kvůli neaktivitě (warriant)
+	Opraveno pro Python 2.6 (warriant)
+	Opraven příkaz LIST pro nynější Lidé (warriant)
+	Opět funkční WHOIS (warriant)
+lidegw-44:
+	A teď už to fakt funguje, honest! (trancelius)
+lidegw-43:
+	Kumulativní backport z různých větví lidegw
+	  * Podpora pro přihlášení z jiných domén (warriant)
+	  * Opravy implementace RFC 2812 (warriant)
+	  * Podpora pro zaheslované místnosti (warriant)
+	  * Rozšíření WHOIS (warriant)
+	  * Dokončena oprava synchronizace user listu (trancelius)
+	  * Drobné úpravy, e.g. rozlišení Odesel/Odesla u PART (warriant)
+	  * Další jednořádkové fixy
+lidegw-42: (hádejte proc 42 ^^)
+	Opraveno odhlašování po cca. 2 hodinách kvůli chybnému načítání c2time (@ALiEN-COOL)
+	Opraveno neodstraňování odcházejících userů z user listu - workaround chyby lide.cz (trancelius)
+lidegw-38:
+	Úprava chování unsmilize (trancelius, lukasekprochazka)
+lidegw-37:
+	Upgrade k lide.cz z 7.11.2008
+	  * HTTP 500 error narafičený na ty, kteří používají validní HTTP požadavky - jo, my jediní jsme je používali (trancelius)
+	  * A hele, už tam není HTTP 302 redirect :-) (mladoucka14)
+lidegw-36: (deltaflyer4747)
+	Drobná oprava parsingu textu z lide.cz (top.a3 > top.a4) / bug znemožňoval čtení příchozích zpráv
+lidegw-35: (deltaflyer4747)
+	Oprava charsetu i pro TOPIC místnosti
+lidegw-34: (deltaflyer4747)
+	Nahrazení ´ -> ' kvůli konverzi znakových sad
+	Hack pro nevalidní klienty typu Miranda, co neposílají dvojtečku před datovou částí
+lidegw-33:
+	Upraven parser systémových zpráv, aby se nenechal splést vhodně zvoleným username
+	Duplex recode mezi libovolnou znakovou sadou a iso-8859-2. Ovlivňuje to commandline parametr --charset=NĚCO,
+		kde NĚCO je znaková sada podporovaná systémem (např. utf-8, iso-8859-2, windows-1250) a /quote prikaz. Volba --utf8-lipp už není.
+	Drobná oprava metody Lide.unsmilize
+lidegw-32:
+	Přidán opravený modul lipparser (p4t0k)
+	Získávání last_ID bylo dáno do try bloku, stejným způsobem byl ošetřen IndexError ve funkci fromArray (p4t0k)
+lidegw-31:
+	Poslední, úspěšný pokus. Bylo to proměnnou 'last' v GET requestu.
+	Opraven filtr vstupního textu, <b> už neztuční text
+	Opravena série chyb způsobená předchozí opravou filtru :))
+	Přidána volba urls - úprava URL na ochcání trapné cenzury nepornografických linků na Lide.cz
+lidegw-30:
+	Další zoufalý pokus o opravení oslepujícího bugu - dynamicky se měnící cookies a náhodné číslo za URI
+lidegw-29:
+	/info už nevyžaduje parametr - bere si aktuální rid, ale zůstává, že mu ho můžete dát explicitně (p4t0k)
+	Doplněna re.findall funkce parsující jméno místnosti + přidání tohoto jména do topicu místnosti (p4t0k)
+lidegw-28:
+	Opraven bug ve vlákně co handluje vstup z IRC klienta + pár malých (možná bezvýznamných) změn v Collectoru (p4t0k)
+	Opraven bug s mezerou v hesle (trancelius, díky nocturne.op.15 za upozornění)
+	Opraven bug (snad) s neexistující referencí na room.hashid_part (p4t0k)
+lidegw-27: (trancelius)
+	Nový crypto subsystém založený na kombinaci symetrické XOR šifry a base64, měl by zvládat libovolné znaky
+	Nový ASCII filtr založený na vnitřních funkcích Pythonu, je potřeba nastavit charset terminálu (/quote set charset utf-8 třeba)
+	Charset je defaultně iso-8859-2, přepínačem --utf-8 se forcne UTF-8. Nahrazuje to přepínač --utf8-lipp, protože to má vliv i na další věci.
+	Charset nastavený přes /quote set má vliv i na ison, whois a další.
+lidegw-26:
+	Aktualizace k lidecz-20060926 (trancelius)
+lidegw-25:
+	Aktualizace k lidecz-20060913 (trancelius)
+lidegw-24:
+	/info reaguje na --utf8-lipp a přídává výpis stálých správců (trancelius)
+lidegw-23:
+	ISON používá lipp
+	Maska má místo hashe užitečnější informace
+lidegw-22:
+	Opraven bug s občasným opakováním přijatého (asi i odeslaného) textu (trancelius)
+	Opraven event parser, aby přijímal všechny JOIN/PART události (trancelius)
+	Přidán switch --utf8-lipp pro výstupní Unicode kódování u lipparseru (trancelius)
+	Ošetření zápisu lockfile na různých OS (p4t0k)
+lidegw-21: (trancelius)
+	Novy vláknový kód
+	Opraveno vícenásobné posílání textu v PM, pokud je odesílatel ve více místnostech
+	Opraveno vícenásobné čtení textu z místnosti
+	Přidán --debug, monitoruje činnost vláken (kdyby se něco zamotalo)
+	Text brány převeden do Unicode
+	Experimentální úprava idleru, která střídá dva stringy (kvůli lide.cz flood protection)
+	Online registrace kvůli počítání uživatelů
+	Opraven mode parser (lidegw už nepředá +h někomu, kdo ho odchodem ztratil)
+	 - metody getOP a getOPs jsem sloučil do jedné, updOPs, která je updatuje najednou a přímo
+
+## Milestone: version 2.0 ##
+
+lidegw-r20: Nová featura /info - vypisuje statistiku místnosti - prochatovaný čas. (p4t0k)
+lidegw-r19: Opraven bug ve vícenásobném připojování do místnosti - např. /join 732368,552433 kvůli němu dřív nešlo (p4t0k)
+lidegw-r18: Opraven bug ve funkci trancecode() && přidán čas a datum k výpisu připojení/odpojení klienta k lidegw (p4t0k)
+lidegw-r17: Lepší parser sys. zpráv (trancelius)
+lidegw-r16: Přidána podpora odesílání i velmi dlouhých úseků textu (trancelius)
+            TOPIC správně převádí HTML entity na znaky (trancelius)
+lidegw-r15: Možnost změny ořezávání smajlíků (trancelius)
+lidegw-r14: Doděláno začlenění lippu (p4t0k); potřebná úprava modulu lipparser [i main.py u lippu] (trancelius)
+lidegw-r13: Opraven bug v idleru a přepsán mechanismus slučování idler_str řetězce (p4t0k)
+lidegw-r12: Pokusné začlenění lide.cz profile parseru (lipp) (modul p4t0k, začlenění trancelius)
+lidegw-r11: Rozšířena podpora MODE příkazu, konkrétně přidání +h, -o a -h. (trancelius)
+            Všechny neparsované systémové zprávy se zobrazují jako NOTICE (trancelius)
+lidegw-r10: Opraven idler, už by měl počítat správně (trancelius)
+lidegw-r09: Opraveno posílání důvodu u kicku (trancelius)
+lidegw-r08: Opravy text_filter(), /me už zase funguje (trancelius)
+lidegw-r07: Přidána podpora šifrování, viz příkazy (trancelius)
+            Opraven TOPIC (trancelius)
+            Při vstupu do místnosti se vypíše její URL (trancelius)
+lidegw-r06: Konečně správné chování OPu, half-OPu a všeho možného předávání (trancelius)
+            Nastavitelná frekvence aktualizace (trancelius)
+lidegw-r05: Nová 'dokumentace' a 'motd' (trancelius)
+            Opravena komunikace s lide.cz, nenačítal se čas místnosti (trancelius)
+lidegw-r04: Přidán filtr diakritiky, viz příkazy (trancelius)
+lidegw-r03: Opraven problém se smajlíky (p4t0k)
+            Předělány user flagy (trancelius)
+            Opraveno logování na lide.cz (trancelius)
+            Odstranění modulu ClientCookie (trancelius)
+            Při přihlášení se vypíše URL hlavní stránky s přihlášeným uživatelem (trancelius)
+lidegw-r01: Částečné přepsání "WELCOME MESSAGE" (p4t0k)
+            Uhlazení vypínání lidegw [pomocí Ctrl+C, Ctrl+D] (p4t0k)
+

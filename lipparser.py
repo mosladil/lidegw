@@ -23,10 +23,9 @@ class myparser:
 		self.www = []
 		self.jmeno = []
 		self.telefon = []
-		self.konto_zalozeno = []
+		self.registrace = []
 		self.posledni_prihlaseni = []
 		self.prochatovano = []
-		self.autorizace = []
 		self.pocet_zobrazeni = []
 		self.stav = []
 		self.zamestnani = []
@@ -82,10 +81,9 @@ class myparser:
 				['WWW:',self.www],
 				['komentar',self.intro_info]],
 			'Statistick\xe9 \xfadaje':
-				[['Konto zalo\xbeeno:',self.konto_zalozeno],
+				[['Registrace:',self.registrace],
 				['Posledn\xed p\xf8ihl\xe1\xb9en\xed:',self.posledni_prihlaseni],
 				['Prochatov\xe1no:',self.prochatovano],
-				['Autorizace:',self.autorizace],
 				['Profil zobrazen:',self.pocet_zobrazeni]],
 			'\xdadaje na profil':
 				[['Stav:',self.stav],
@@ -131,7 +129,10 @@ class myparser:
 				}
 	def getvalues(self):
 		"""parsuje informace z profilu na lide.cz"""
-		from urllib import urlopen
+		from urllib import urlopen, pathname2url
+		# osetreni nicku pro pripadne specialni znaky
+		# (FIXME: lepsi by bylo rovnou vyhodit chybu, kdyby tam nejaky specialni znak byl a jeste kontrolovat, jestli nema nick vic nez 40 znaku)
+		self.nick = pathname2url(self.nick)
 		# pokusime se stahnout stranku s profilem a overime, jestli uzivatel existuje
 		try:
 			prof = urlopen(self.__baseaddress+self.nick)
@@ -150,86 +151,98 @@ class myparser:
 			return 0
 		# orezeme stranku s profilem o \n a \t
 		self.profil = re.sub('\n','',re.sub('\t','',self.profile))
-		#@-> self.online
-		if re.search(r'nen\xed v \xbe\xe1dn\xe9 m\xedstnosti ani jinde',self.profile):
-			self.online = ['nen\xed v \xbe\xe1dn\xe9 m\xedstnosti ani jinde']
-		elif re.search(r'U\xbeivatel (.*?) nechod\xed na Lide.cz',self.profile):
+		#@-> self.online - OK
+		if re.search(r'U\xbeivatel (.*?) nechod\xed na Lide.cz',self.profile):
 			print '> U\xbeivatel '+self.nick+' nechod\xed na Lide.cz'
 			return 0
 		elif re.search(r'na.slu\xbeb\xec.<strong>chat',self.profile):
 			self.online = ['na slu\xbeb\xec chat']
 		elif re.search(r'na.slu\xbeb\xec.<strong>profil',self.profile):
 			self.online = ['na slu\xbeb\xec profil']
-		else:
-			allrooms = re.findall(r'Online:</span>(.*?)</p>', self.profil)
-			ids_roomnames = re.findall(r'room_ID=(\d+)".>(.+?)</a>', allrooms[0])
-			for dvojice in ids_roomnames:
-				self.online.append('%s [%s]' %(dvojice[1], dvojice[0]))
-		#@-> self.adresa_profilu
+		elif re.search(r'Online:</span>', self.profile):
+			self.online = re.findall(r'Online:</span>\s*(.*?)\s*</li>', self.profile)
+			try:
+				self.online[0] = re.sub(r'<.*?>', '', self.online[0])
+			except IndexError:
+				pass
+			if re.search(r'room_ID=', self.profile):
+				ids_roomnames = re.findall(r'room_ID=(\d+)".>(.+?)</a>', self.profile)
+				for dvojice in ids_roomnames:
+					self.online.append('%s [%s]' %(dvojice[1], dvojice[0]))
+                else:
+			self.online = ['informace nen\xed dostupn\xe1']
+		#@-> self.adresa_profilu - OK
 		self.adresa_profilu = ['http://www.lide.cz/'+self.nick]
-		#@-> self.jmeno
+		#@-> self.jmeno - OK
 		self.jmeno = re.findall(r'<strong>Jm\xe9no:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.vek
+		#@-> self.vek - OK
 		self.vek = re.findall(r'([\d|\?]* let)',self.profile)
-		#@-> self.pohlavi
-		poh = re.findall(r'img/common/ico-(.).{0,5}.gif',self.profile)
-		if poh[0] == 'M': self.pohlavi = 'Mu\xbe'
-		elif poh[0] == 'F': self.pohlavi = '\xaeena'
-		else: self.pohlavi = 'nezn\xe1m\xe9'
-		#@-> self.bydliste
+		#@-> self.pohlavi - OK
+		poh = re.findall(r'img/common/ico-(\w{1,7}).gif',self.profile)
+		try:
+			if poh[0] == 'M': self.pohlavi = 'Mu\xbe'
+			elif poh[0] == 'F': self.pohlavi = '\xaeena'
+			else: self.pohlavi = 'nezn\xe1m\xe9'
+		except IndexError:
+			print self.nick
+		#@-> self.bydliste - OK
 		self.bydliste = re.findall(r'let\s+,\ (.*)\s+',self.profile)
-		#@-> self.icq
+		#@-> self.icq - OK
 		self.icq = re.findall(r'<strong>ICQ:</strong>.(.+)\s',self.profile)
-		#@-> self.www
+		#@-> self.www - OK
 		self.www = re.findall(r'<strong>WWW:</strong>.<a href="/redir.fcgi\?(.+)".target',self.profile)
-		#@-> self.telefon
+		#@-> self.telefon - OK
 		self.telefon = re.findall(r'<strong>Telefon:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.konto_zalozeno
-		self.konto_zalozeno = re.findall(r'<strong>Konto.zalo\xbeeno:</strong>\s*(\d{2}\.\d{2}\.\d{4}.\d{2}:\d{2}:\d{2})\s*?(\(.*\))',self.profile)
-		#@-> self.posledni_prihlaseni
-		self.posledni_prihlaseni = re.findall(r'<strong>Posledn\xed.p\xf8ihl\xe1\xb9en\xed:</strong>\s*<b>(\d{2}\.\d{2}\.\d{4}.\d{2}:\d{2}:\d{2})</b>\s*?(\(.*\))',self.profile)
-		#@-> self.prochatovano
-		self.prochatovano = re.findall(r'<strong>Prochatov\xe1no:</strong>.(.*)\s*\(<a',self.profile)
-		#@-> self.autorizace
-		self.autorizace = re.findall(r'<strong>Autorizace:</strong>.(.*)</li>',self.profile)
-		#@-> self.pocet_zobrazeni
+		#@-> self.registrace - OK
+		self.registrace = re.findall(r'<strong>Registrace:</strong>\s*(\d{1,2}\.\d{1,2}\.\d{4})',self.profile)
+		#@-> self.posledni_prihlaseni - OK
+		self.posledni_prihlaseni = re.findall(r'<strong>Aktivn\xed:</strong>\s*(.+)\s*</li>',self.profile)
+		#@-> self.prochatovano - OK
+		self.prochatovano = re.findall(r'<strong>Prochatov\xe1no:</strong>.(.*)</li>',self.profile)
+		#@-> self.pocet_zobrazeni - OK
 		self.pocet_zobrazeni = re.findall(r'<strong>Profil zobrazen:</strong>.(.*)</li>',self.profile)
-		#@-> self.stav
-		self.stav = re.findall(r'<strong>stav:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.zamestnani
-		self.zamestnani = re.findall(r'<strong>zam\xecstn\xe1n\xed:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.vzdelani
-		self.vzdelani = re.findall(r'<strong>vzd\xecl\xe1n\xed:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.jazyk
-		self.jazyk = re.findall(r'<strong>jazyky:</strong>(.*?)</li>',self.profil)
-		#@-> self.vyska
-		self.vyska = re.findall(r'<strong>v\xfd\xb9ka:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.hmotnost
-		self.hmotnost = re.findall(r'<strong>hmotnost:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.postava
-		self.postava = re.findall(r'<strong>postava:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.barva_oci
-		self.barva_oci = re.findall(r'<strong>barva o\xe8\xed:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.barva_vlasu
-		self.barva_vlasu = re.findall(r'<strong>barva vlas\xf9:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.povaha
-		self.povaha = re.findall(r'<strong>povaha:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.pohled_na_svet
-		self.pohled_na_svet = re.findall(r'<strong>pohled na sv\xect:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.otevrenost
-		self.otevrenost = re.findall(r'<strong>otev\xf8enost:</strong>\s*(.*)\s*</li>',self.profile)
-		#@-> self.zajmy
-		self.zajmy = re.findall(r'<strong>z\xe1jmy:</strong>(.*?)</li>',self.profil)
-		#@-> self.sport
-		self.sport = re.findall(r'<strong>sport:</strong>(.*?)</li>',self.profil)
-		#@-> self.literatura
-		self.literatura = re.findall(r'<strong>literatura:</strong>(.*?)</li>',self.profil)
-		#@-> self.hudba
-		self.hudba = re.findall(r'<strong>hudba:</strong>(.*?)</li>',self.profil)
-		#@-> self.zvire
-		self.zvire = re.findall(r'<strong>zv\xed\xf8e:</strong>(.*?)</li>',self.profil)
+		#@-> self.stav - OK
+		self.stav = re.findall(r'<strong>Stav:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.zamestnani - OK
+		self.zamestnani = re.findall(r'<strong>Zam\xecstn\xe1n\xed:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.vzdelani - OK
+		self.vzdelani = re.findall(r'<strong>Vzd\xecl\xe1n\xed:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.jazyk - OK
+		self.jazyk = re.findall(r'<strong>Jazyky:</strong>(.*?)</li>',self.profil)
+		#@-> self.vyska - OK
+		self.vyska = re.findall(r'<strong>V\xfd\xb9ka:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.hmotnost - OK
+		self.hmotnost = re.findall(r'<strong>Hmotnost:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.postava - OK
+		self.postava = re.findall(r'<strong>Postava:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.barva_oci - OK
+		self.barva_oci = re.findall(r'<strong>Barva o\xe8\xed:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.barva_vlasu - OK
+		self.barva_vlasu = re.findall(r'<strong>Barva vlas\xf9:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.povaha - BUG
+		self.povaha = re.findall(r'<strong>Moje povaha:</strong>(.*?)</li>',self.profil)
+		# funkcni, ale slozitejsi mechanismus ziskavani seznamu povahovych rysu - mozna se nekde bude hodit, tak ho zatim nemazu
+		#try:
+		#	partpov = re.findall(r'<strong>Moje povaha:</strong>(.*?)</li>', self.profile, re.DOTALL)
+		#	self.povaha = [', '.join(re.findall(r'\s*(.*?)[,\n]',partpov[0])[:-1])]
+		#except IndexError:
+		#	pass
+		#@-> self.pohled_na_svet - OK
+		self.pohled_na_svet = re.findall(r'<strong>Pohled na sv\xect:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.otevrenost - OK
+		self.otevrenost = re.findall(r'<strong>Otev\xf8enost:</strong>\s*(.*)\s*</li>',self.profile)
+		#@-> self.zajmy - OK
+		self.zajmy = re.findall(r'<strong>Z\xe1jmy:</strong>(.*?)</li>',self.profil)
+		#@-> self.sport - OK
+		self.sport = re.findall(r'<strong>Sport:</strong>(.*?)</li>',self.profil)
+		#@-> self.literatura - OK
+		self.literatura = re.findall(r'<strong>Literatura:</strong>(.*?)</li>',self.profil)
+		#@-> self.hudba - OK
+		self.hudba = re.findall(r'<strong>Hudba:</strong>(.*?)</li>',self.profil)
+		#@-> self.zvire - OK
+		self.zvire = re.findall(r'<strong>Zv\xed\xf8e:</strong>(.*?)</li>',self.profil)
 		#@-> self.bydlimkde
-		self.bydlimkde = re.findall(r'<strong>bydl\xedm:</strong>\s*(.*)\s*</li>',self.profile)
+		self.bydlimkde = re.findall(r'<strong>Bydl\xedm:</strong>\s*(.*)\s*</li>',self.profile)
 		#@-> self.bydlimskym
 		self.bydlimskym = re.findall(r'<strong>bydl\xedm s:</strong>\s*(.*)\s*</li>',self.profile)
 		#@-> self.vztah
@@ -251,7 +264,7 @@ class myparser:
 		#@-> self.intro_info
 		self.intro_info = re.findall(r'<p class="introduction">(.*?)</p>',self.profile)
 		#@-> self.unp_info
-		self.unp_info = self._komentar('.daje.na.profil')
+		self.unp_info = re.findall(r'<p class="introduction">(.*?)',self.profile)
 		#@-> self.postava_info
 		self.postava_info = self._komentar('Postava')
 		#@-> self.povaha_info
@@ -263,7 +276,7 @@ class myparser:
 		#@-> self.seznameni_info
 		self.seznameni_info = self._komentar('Sezn.men')
 		#@-> self.zavislosti_info
-		self.zavislosti_info = self._komentar('Z.vislosti')
+		self.zavislosti_info = re.findall(r'<h3>Z.vislosti.*?<p>(.+?)</p><div id="adPRclanek"',self.profil)
 	def _komentar(self,regexp):
 		"""parsuje nektere komentarove promenne (to jsou vsechny promenne s suffixem _info)"""
 		try:
